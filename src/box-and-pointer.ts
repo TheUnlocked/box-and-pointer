@@ -64,7 +64,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                         target: binding[1],
                         anchors: ["Center", ["Continuous", {faces: ['top', 'left', 'bottom']}]],
                         overlays: overlays,
-                        connector: ["Bezier", {curviness: 40, margin: 0.01}],
+                        connector: [binding[0].parentElement!.parentElement === binding[1].parentElement!.parentElement ? "StateMachine" : "Bezier", {curviness: 40, proximityLimit:0 , margin: 0.01}],
                         endpoint: "Blank"
                     });
                 }
