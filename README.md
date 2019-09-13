@@ -1,7 +1,7 @@
 # box-and-pointer
- HTML WebElement for box and pointer diagrams
+HTML WebElement for box and pointer diagrams
 
-Sample usage:
+## Sample
 
 ```html
 <!DOCTYPE html>
@@ -32,3 +32,9 @@ Sample usage:
 </html>
 ```
 ![](images/listsample1.png)
+
+## Credit
+* Pointers rendered using [jsPlumb](https://github.com/jsplumb/jsplumb).
+* Visual design algorithm based off of the box-and-pointer diagrams at [scheme.cs61a.org]().
+* Uses [html-parsed-element](https://github.com/WebReflection/html-parsed-element) to render only after the internal HTML node structure has been built.
+* Built with [TypeScript](http://typescriptlang.org).
