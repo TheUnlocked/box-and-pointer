@@ -35,6 +35,6 @@ HTML WebElement for box and pointer diagrams
 
 ## Credit
 * Pointers rendered using [jsPlumb](https://github.com/jsplumb/jsplumb).
-* Visual design algorithm based off of the box-and-pointer diagrams at [scheme.cs61a.org]().
+* Visual design algorithm based off of the box-and-pointer diagrams at [scheme.cs61a.org](https://scheme.cs61a.org/).
 * Uses [html-parsed-element](https://github.com/WebReflection/html-parsed-element) to render only after the internal HTML node structure has been built.
 * Built with [TypeScript](http://typescriptlang.org).
