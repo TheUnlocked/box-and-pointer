@@ -1,10 +1,11 @@
-/// <reference path="../references/html-parsed-element.d.ts" />
 /// <reference path="../references/jsplumb.d.ts" />
-import HTMLParsedElement from 'https://unpkg.com/html-parsed-element/esm/index.js';
+import { parse as sParse } from "./sparse/parser.js";
+import SExpression from "./sparse/sexpr.js";
+import HTMLParsedElement from "./html-parsed-element/index.js";
 
-const bpss = document.getElementById('boxpointerss')!;
+console.log(sParse('(1 2 () 3 4)').toString());
 
-class Pair {
+class PairObject {
     public head: Pair | string | null;
     public tail: Pair | string | null;
 
@@ -12,6 +13,11 @@ class Pair {
         this.head = head;
         this.tail = tail;
     }
+}
+
+type Pair = PairObject | SExpression;
+const isPair = (object: any): object is Pair => {
+    return object instanceof PairObject || object instanceof SExpression;
 }
 
 class BoxAndPointerElement extends HTMLParsedElement {
@@ -30,7 +36,13 @@ class BoxAndPointerElement extends HTMLParsedElement {
         const root = this.generatePairsFromDOM();
         this.shadow.innerHTML = "";
 
-        this.shadow.appendChild(bpss.cloneNode());
+        this.shadow.appendChild(document.getElementById('box-and-pointer-style')!.cloneNode());
+        if (this.hasAttribute('stylesheet')){
+            const stylesheet = document.createElement('link');
+            stylesheet.rel = 'stylesheet';
+            stylesheet.href = this.getAttribute('stylesheet')!;
+            this.shadow.appendChild(stylesheet);
+        }
         
         const rows = [document.createElement('div')];
         rows[0].classList.add('bp--row');
@@ -124,20 +136,42 @@ class BoxAndPointerElement extends HTMLParsedElement {
             }
         }
 
+        const getRealChildren = (nodes: Node[]): (Pair | Text | string | HTMLElement)[] => {
+            const filteredChildren: (Text | HTMLElement)[] =
+                <(Text | HTMLElement)[]>nodes.filter(x => (x instanceof Text && x.data.trim() !== "") || x instanceof HTMLElement);
+            return filteredChildren.reduce((result: (Pair | Text | string | HTMLElement)[], current: Text | HTMLElement): (Pair | Text | string | HTMLElement)[] => {
+                if (current instanceof Text){
+                    let sexpr: Pair | null = sParse(current.data);
+                    const ins: (string | Pair)[] = [];
+                    while (isPair(sexpr)){
+                        ins.push(sexpr.head);
+                        sexpr = sexpr.tail;
+                    }
+                    return result.concat(ins);
+                }
+                else{
+                    result.push(current);
+                    return result;
+                }
+            }, []);
+        };
+
         const generatePairFromElement = (element: Element): Pair => {
-            let pair: Pair = new Pair(null, null);
+            let pair: Pair = new PairObject(null, null);
 
             if (element.hasAttribute('name') && element.getAttribute('name') !== ""){
                 namedPairs[element.getAttribute('name')!] = pair;
             }
 
-            const realChildNodes: (Text | HTMLElement)[] = <(Text | HTMLElement)[]>[...element.childNodes]
-                .filter(x => (x instanceof Text && x.data.trim() !== "") || x instanceof HTMLElement);
+            const realChildNodes = getRealChildren([...element.childNodes]);
 
             if (realChildNodes.length > 0){
                 let node = realChildNodes[0];
                 if (node instanceof Text){
                     pair.head = node.data.trim();
+                }
+                else if (typeof node === "string" || isPair(node)){
+                    pair.head = node;
                 }
                 else if (node.tagName === "BOX"){
                     pair.head = generateValueFromBox(pair, 'head', node);
@@ -159,6 +193,9 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 let node = realChildNodes[1];
                 if (node instanceof Text){
                     pair.tail = node.data.trim();
+                }
+                else if (typeof node === "string" || isPair(node)){
+                    pair.tail = node;
                 }
                 else if (node.tagName === "BOX"){
                     pair.tail = generateValueFromBox(pair, 'tail', node);
@@ -186,7 +223,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         };
 
         const generatePairFromListElement = (element: Element): Pair => {
-            const rootPair = new Pair(null, null)
+            const rootPair = new PairObject(null, null)
             let pair: Pair = rootPair;
 
             if (element.hasAttribute('name') && element.getAttribute('name') !== ""){
@@ -194,13 +231,15 @@ class BoxAndPointerElement extends HTMLParsedElement {
             }
             const explicitTail = element.hasAttribute('explicit-tail');
 
-            const realChildNodes: (Text | HTMLElement)[] = <(Text | HTMLElement)[]>[...element.childNodes]
-                .filter(x => (x instanceof Text && x.data.trim() !== "") || x instanceof HTMLElement);
+            const realChildNodes = getRealChildren([...element.childNodes]);
             
             const lastElementIndex = realChildNodes.length - (explicitTail ? 2 : 1);
             for (const node of realChildNodes.slice(0, lastElementIndex + 1)){
                 if (node instanceof Text){
                     pair.head = node.data.trim();
+                }
+                else if (typeof node === "string" || isPair(node)){
+                    pair.head = node;
                 }
                 else if (node.tagName === "BOX"){
                     pair.head = generateValueFromBox(pair, 'head', node);
@@ -218,7 +257,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                     console.error(`Expected text, box, pair, list, or empty, intead got ${node.tagName.toLowerCase()}`);
                 }
                 if (node !== realChildNodes[lastElementIndex]){
-                    pair.tail = new Pair(null, null);
+                    pair.tail = new PairObject(null, null);
                     pair = pair.tail;
                 }
             }
@@ -226,6 +265,9 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 const node = realChildNodes[realChildNodes.length-1];
                 if (node instanceof Text){
                     pair.tail = node.data.trim();
+                }
+                else if (typeof node === "string" || isPair(node)){
+                    pair.tail = node;
                 }
                 else if (node.tagName === "BOX"){
                     pair.tail = generateValueFromBox(pair, 'tail', node);
@@ -268,7 +310,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         }
 
         if (rootPair === undefined){
-            rootPair = new Pair(null, null);
+            rootPair = new PairObject(null, null);
         }
         return rootPair
     }
@@ -303,7 +345,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         pairBox.appendChild(tailBox);
         row.appendChild(pairBox);
 
-        if (pair.tail instanceof Pair){
+        if (isPair(pair.tail)){
             // handle this later
         }
         else if (pair.tail == null){
@@ -318,7 +360,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
             tailBox.appendChild(spacer);
         }
 
-        if (pair.head instanceof Pair){
+        if (isPair(pair.head)){
             // handle this later
         }
         else if (pair.head == null){
@@ -333,10 +375,10 @@ class BoxAndPointerElement extends HTMLParsedElement {
             headBox.appendChild(spacer);
         }
 
-        if (pair.tail instanceof Pair){
+        if (isPair(pair.tail)){
             this.renderDiagram(tailBox, rows, rowIndex, pair.tail, []);
         }
-        if (pair.head instanceof Pair){
+        if (isPair(pair.head)){
             const newIndex = rows.push(document.createElement('div')) - 1;
             rows[newIndex].classList.add('bp--row');
             this.renderDiagram(headBox, rows, newIndex, pair.head, (<HTMLDivElement[]>[...row.children]).slice(0, myIndex));
