@@ -1,6 +1,8 @@
 # box-and-pointer
 HTML WebElement for box and pointer diagrams
 
+[Click here for a quick start tutorial.](https://github.com/TheUnlocked/box-and-pointer/wiki/Quick-Start)
+
 ## Sample
 
 ```html
