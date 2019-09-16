@@ -28,19 +28,11 @@ class BoxAndPointerElement extends HTMLParsedElement {
     constructor(){
         super();
         this.shadow = this.attachShadow({mode: "open"});
+        this.shadow.innerHTML = "";
     }
 
-    parsedCallback() {
+    async parsedCallback() {
         const root = this.generatePairsFromDOM();
-        this.shadow.innerHTML = "";
-
-        this.shadow.appendChild(document.getElementById('box-and-pointer-style')!.cloneNode());
-        if (this.hasAttribute('stylesheet')){
-            const stylesheet = document.createElement('link');
-            stylesheet.rel = 'stylesheet';
-            stylesheet.href = this.getAttribute('stylesheet')!;
-            this.shadow.appendChild(stylesheet);
-        }
         
         const rows = [document.createElement('div')];
         rows[0].classList.add('bp--row');
@@ -54,8 +46,22 @@ class BoxAndPointerElement extends HTMLParsedElement {
             Container: this.shadow,
             PaintStyle: {stroke: "black", strokeWidth: 1.5, fill: "none"}
         });
-        
-        plumb.ready(() => {
+
+        // Make sure stylesheets are loaded. This ensures cross-browser compatibility.
+        const stylesheets = [document.getElementById('box-and-pointer-style')!.cloneNode()];
+        if (this.hasAttribute('stylesheet')){
+            const stylesheet = document.createElement('link');
+            stylesheet.rel = 'stylesheet';
+            stylesheet.href = this.getAttribute('stylesheet')!;
+            stylesheets.push(stylesheet);
+        }
+        let toLoad = stylesheets.length;
+        for (let ss of stylesheets){
+            ss.addEventListener('load', () => --toLoad === 0 && plumb.ready(loadArrows));
+        }
+        this.shadow.prepend(...stylesheets);
+
+        const loadArrows = () => {
             const overlays: OverlaySpec[] = [["Arrow", { location: 1, width: 8, length: 12, }], ["Label", {location: 0, cssClass: "bp--pointer-source"}]];
             for (let binding of this.arrowBindings){
                 if (binding[2] !== "unknown"){
@@ -88,9 +94,8 @@ class BoxAndPointerElement extends HTMLParsedElement {
                     endpoint: "Blank"
                 });
             }
-        });
-
-        this.classList.add('bp--loaded');
+            this.classList.add('bp--loaded');
+        };
     }
 
     private generatePairsFromDOM(): Pair{
