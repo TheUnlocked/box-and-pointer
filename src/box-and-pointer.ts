@@ -95,6 +95,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 });
             }
             this.classList.add('bp--loaded');
+            window.addEventListener('resize', e => plumb.repaintEverything(true));
         };
     }
 
