@@ -10,8 +10,8 @@ HTML WebElement for box and pointer diagrams
 <html>
 <head>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsPlumb/2.11.2/js/jsplumb.min.js"></script>
-    <link id="box-and-pointer-style" rel="stylesheet" href="./box-and-pointer.css" />
-    <script src="./dist/box-and-pointer.js" type="module"></script>
+    <link id="box-and-pointer-style" rel="stylesheet" href="./box-and-pointer/box-and-pointer.css" />
+    <script src="./box-and-pointer/box-and-pointer.js"></script>
 </head>
 <body>
     <box-and-pointer>
