@@ -37,3 +37,4 @@ HTML WebElement for box and pointer diagrams
 * Visual design algorithm based off of the box-and-pointer diagrams at [scheme.cs61a.org](https://scheme.cs61a.org/).
 * Uses [html-parsed-element](https://github.com/WebReflection/html-parsed-element) to render only after the internal HTML node structure has been built.
 * Built with [TypeScript](http://typescriptlang.org).
+* [Webpack](https://webpack.js.org) for making me not need to deal with the nightmare that is CORS with ES6 modules
