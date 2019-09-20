@@ -94,8 +94,17 @@ class BoxAndPointerElement extends HTMLParsedElement {
                     endpoint: "Blank"
                 });
             }
+
+            // fix pointer positions
+            const rect = this.getBoundingClientRect();
+            for (const arrow of <NodeListOf<HTMLDivElement | SVGElement>>this.shadow.querySelectorAll('.jtk-overlay, .jtk-endpoint, .jtk-connector')){
+                
+                arrow.style.top = `${+arrow.style.top!.slice(0, arrow.style.top!.length-2) - rect.top - window.scrollY}px`;
+                arrow.style.left = `${+arrow.style.left!.slice(0, arrow.style.left!.length-2) - rect.left - window.scrollX}px`;
+            }
+
             this.classList.add('bp--loaded');
-            window.addEventListener('resize', e => plumb.repaintEverything(true));
+            // window.addEventListener('resize', e => plumb.repaintEverything(true));
         };
     }
 
