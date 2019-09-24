@@ -365,10 +365,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         else{
             const body = document.createElement('span');
             body.innerText = pair.tail;
-            const spacer: HTMLSpanElement = <HTMLSpanElement>body.cloneNode(true);
-            spacer.classList.add('bp--spacer');
             tailBox.appendChild(body);
-            tailBox.appendChild(spacer);
         }
 
         if (isPair(pair.head)){
@@ -380,10 +377,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         else{
             const body = document.createElement('span');
             body.innerText = pair.head;
-            const spacer: HTMLSpanElement = <HTMLSpanElement>body.cloneNode(true);
-            spacer.classList.add('bp--spacer');
             headBox.appendChild(body);
-            headBox.appendChild(spacer);
         }
 
         if (isPair(pair.tail)){

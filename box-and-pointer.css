@@ -18,16 +18,10 @@
     text-align: center;
 }
 
-.bp--box > span.bp--spacer {
-    visibility: hidden;
-    position: relative;
-}
-
 .bp--box > span {
-    padding: 0.45em;
-    /* top: 50%;
-    left: 50%; */
-    position: absolute;
+    padding: 0 0.45em;
+    position: relative;
+    line-height: 2em;
 }
 
 .bp--row:after {
