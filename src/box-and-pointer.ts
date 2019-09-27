@@ -65,6 +65,9 @@ class BoxAndPointerElement extends HTMLParsedElement {
             const overlays: OverlaySpec[] = [["Arrow", { location: 1, width: 8, length: 12, }], ["Label", {location: 0, cssClass: "bp--pointer-source"}]];
             for (let binding of this.arrowBindings){
                 if (binding[2] !== "unknown"){
+                    if (binding[2] === "Top"){
+                        binding[1].style.width = "2em";
+                    }
                     plumb.connect({
                         source: binding[0],
                         target: binding[1],
@@ -73,6 +76,9 @@ class BoxAndPointerElement extends HTMLParsedElement {
                         connector: "Straight",
                         endpoint: "Blank"
                     });
+                    if (binding[2] === "Top"){
+                        binding[1].style.width = null;
+                    }
                 }
                 else{
                     plumb.connect({
