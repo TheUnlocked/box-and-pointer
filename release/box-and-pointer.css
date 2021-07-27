@@ -4,7 +4,7 @@
     font-family: 'Roboto', sans-serif;
 }
 
-.bp--pair {
+.bp--box-container {
     margin: 0.4em 0.5em;
     outline: black 0.1em solid;
     display: inline-block;
@@ -15,12 +15,17 @@
     float: left;
     height: 2em;
     min-width: 2em;
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-.bp--box > span {
+.bp--hidden {
+    visibility: hidden;
+}
+
+.bp--value-container {
     padding: 0 0.45em;
-    position: relative;
     line-height: 2em;
 }
 

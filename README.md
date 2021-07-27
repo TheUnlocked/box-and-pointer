@@ -1,7 +1,8 @@
 # box-and-pointer
 HTML WebElement for box and pointer diagrams
 
-[Click here for a quick start tutorial.](https://github.com/TheUnlocked/box-and-pointer/wiki/Quick-Start)
+<strike>[Click here for a quick start tutorial.](https://github.com/TheUnlocked/box-and-pointer/wiki/Quick-Start)</strike>  
+Currently the tutorial is out of date. While some things are the same, there have been some breaking changes, and many of the samples and explanations are no longer valid.
 
 ## Sample
 
@@ -15,17 +16,21 @@ HTML WebElement for box and pointer diagrams
 </head>
 <body>
     <box-and-pointer>
-        <list origin explicit-tail>
+        <list explicit-tail>
             1
-            <list> 2 <box ref="8"></box> 3 </list>
+            <list>
+                2
+                <pointer ref="8"></pointer>
+                3
+            </list>
             <pair>
-                <pair> 4 <box ref="5"></box> </pair>
-                <list name="5"> 5 6 </list>
+                <pair>4 <pointer ref="5"></pointer></pair>
+                <list name="5">5 6</list>
             </pair>
             7
-            <box ref="8"></box>
+            <pointer ref="8"></pointer>
         </list>
-        <list name="8"> 8 9 </list>
+        <list name="8">8 9</list>
     </box-and-pointer>
 </body>
 </html>
@@ -37,4 +42,4 @@ HTML WebElement for box and pointer diagrams
 * Visual design algorithm based off of the box-and-pointer diagrams at [scheme.cs61a.org](https://scheme.cs61a.org/).
 * Uses [html-parsed-element](https://github.com/WebReflection/html-parsed-element) to render only after the internal HTML node structure has been built.
 * Built with [TypeScript](http://typescriptlang.org).
-* [Webpack](https://webpack.js.org) for making me not need to deal with the nightmare that is CORS with ES6 modules
+* [Webpack](https://webpack.js.org)

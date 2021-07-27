@@ -1,28 +1,18 @@
-/// <reference path="../references/jsplumb.d.ts" />
-import { parse as sParse } from "./sparse/parser.js";
-import SExpression from "./sparse/sexpr.js";
-import HTMLParsedElement from "./html-parsed-element/index.js";
+import { BoxObject, makePair, makeSingle, UIObjectType } from "./types/BoxObject";
+import HTMLParsedElement from "html-parsed-element";
+import { Attributes, InternalElement, internalElementTagNames, Tags } from "./types/ElementInfo";
+import { ContentObject, ContentObjectType, emptySingleton, makeNullPointer, makePointer, makeRich, makeString, PointerObject, transformContentObject } from "./types/ContentObject";
+import { parse as sParse, SExpression } from "sparse";
 
-class PairObject {
-    public head: Pair | string | null;
-    public tail: Pair | string | null;
-
-    constructor(head: string | Pair | null, tail: string | Pair | null) {
-        this.head = head;
-        this.tail = tail;
-    }
-}
-
-type Pair = PairObject | SExpression;
-const isPair = (object: any): object is Pair => {
-    return object instanceof PairObject || object instanceof SExpression;
+interface ArrowBinding {
+    from: HTMLDivElement;
+    to: HTMLDivElement;
+    side: "Top" | "Left" | "unknown";
 }
 
 class BoxAndPointerElement extends HTMLParsedElement {
-    private visited: Pair[] = [];
-    private _visitedElements: HTMLDivElement[] = [];
-    private arrowBindings: [HTMLDivElement, HTMLDivElement, "Top" | "Left" | "unknown"][] = [];
-    private slashes: HTMLDivElement[] = [];
+    private arrowBindings = [] as ArrowBinding[];
+    private slashes = [] as HTMLDivElement[];
     private shadow: ShadowRoot;
 
     constructor(){
@@ -31,14 +21,18 @@ class BoxAndPointerElement extends HTMLParsedElement {
         this.shadow.innerHTML = "";
     }
 
-    async parsedCallback() {
-        const root = this.generatePairsFromDOM();
-        
-        const rows = [document.createElement('div')];
-        rows[0].classList.add('bp--row');
+    override async parsedCallback() {
+        const graph = this.calculateGraphFromDOM();
 
-        this.renderDiagram(null, rows, 0, root, []);
-        for (let row of rows){
+        for (const object of graph) {
+            this.prepareRenderRoot(object);
+        }
+
+        for (const object of graph) {
+            this.renderFromBoxObject(object, this.pushRow([]), true);
+        }
+
+        for (let row of this.rows){
             this.shadow.appendChild(row);
         }
         
@@ -55,6 +49,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
             stylesheet.href = this.getAttribute('stylesheet')!;
             stylesheets.push(stylesheet);
         }
+
         let toLoad = stylesheets.length;
         for (let ss of stylesheets){
             ss.addEventListener('load', () => --toLoad === 0 && plumb.ready(loadArrows));
@@ -63,35 +58,35 @@ class BoxAndPointerElement extends HTMLParsedElement {
 
         const loadArrows = () => {
             const overlays: OverlaySpec[] = [["Arrow", { location: 1, width: 8, length: 12, }], ["Label", {location: 0, cssClass: "bp--pointer-source"}]];
-            for (let binding of this.arrowBindings){
-                if (binding[2] !== "unknown"){
-                    if (binding[2] === "Top"){
-                        binding[1].style.width = "2em";
+            for (const binding of this.arrowBindings){
+                if (binding.side !== "unknown"){
+                    if (binding.side === "Top"){
+                        binding.to.style.width = "2em";
                     }
                     plumb.connect({
-                        source: binding[0],
-                        target: binding[1],
-                        anchors: ["Center", binding[2]],
+                        source: binding.from,
+                        target: binding.to,
+                        anchors: ["Center", binding.side],
                         overlays: overlays,
                         connector: "Straight",
                         endpoint: "Blank"
                     });
-                    if (binding[2] === "Top"){
-                        binding[1].style.width = null;
+                    if (binding.side === "Top"){
+                        binding.to.style.width = "";
                     }
                 }
                 else{
                     plumb.connect({
-                        source: binding[0],
-                        target: binding[1],
+                        source: binding.from,
+                        target: binding.to,
                         anchors: ["Center", ["Continuous", {faces: ['top', 'left', 'bottom']}]],
                         overlays: overlays,
-                        connector: [binding[0].parentElement!.parentElement === binding[1].parentElement!.parentElement ? "StateMachine" : "Bezier", {curviness: 40, proximityLimit:0 , margin: 0.01}],
+                        connector: [binding.from.parentElement!.parentElement === binding.to.parentElement!.parentElement ? "StateMachine" : "Bezier", { curviness: 40, proximityLimit:0, margin: 0.01 }],
                         endpoint: "Blank"
                     });
                 }
             }
-            for (let slashTarget of this.slashes){
+            for (const slashTarget of this.slashes){
                 plumb.connect({
                     source: slashTarget,
                     target: slashTarget,
@@ -105,8 +100,8 @@ class BoxAndPointerElement extends HTMLParsedElement {
             const rect = this.getBoundingClientRect();
             for (const arrow of <NodeListOf<HTMLDivElement | SVGElement>>this.shadow.querySelectorAll('.jtk-overlay, .jtk-endpoint, .jtk-connector')){
                 
-                arrow.style.top = `${+arrow.style.top!.slice(0, arrow.style.top!.length-2) - rect.top - window.scrollY}px`;
-                arrow.style.left = `${+arrow.style.left!.slice(0, arrow.style.left!.length-2) - rect.left - window.scrollX}px`;
+                arrow.style.top = `${+arrow.style.top!.slice(0, -2) - rect.top - window.scrollY}px`;
+                arrow.style.left = `${+arrow.style.left!.slice(0, -2) - rect.left - window.scrollX}px`;
             }
 
             this.classList.add('bp--loaded');
@@ -114,286 +109,442 @@ class BoxAndPointerElement extends HTMLParsedElement {
         };
     }
 
-    private generatePairsFromDOM(): Pair{
-        const namedPairs: {[name: string]: Pair} = {};
-        const refsToResolve: [Pair, 'head' | 'tail'][] = [];
-        let rootPair: Pair | undefined;
-        const originPairExists = [...this.children].find(x => x.hasAttribute('origin'));
-
-        const getRealChildren = (nodes: Node[]): (Pair | string | HTMLElement)[] => {
-            const filteredChildren: (Text | HTMLElement)[] =
-                <(Text | HTMLElement)[]>nodes.filter(x => (x instanceof Text && x.data.trim() !== "") || x instanceof HTMLElement);
-            return filteredChildren.reduce((result: (Pair | string | HTMLElement)[], current: Text | HTMLElement): (Pair | string | HTMLElement)[] => {
-                if (current instanceof Text){
-                    let sexpr: Pair | null = sParse(current.data);
-                    const ins: (string | Pair)[] = [];
-                    while (isPair(sexpr)){
-                        ins.push(sexpr.head);
-                        sexpr = sexpr.tail;
-                    }
-                    return result.concat(ins);
+    private getChildren(elt: BoxAndPointerElement | InternalElement, allowText: true): (InternalElement | string)[];
+    private getChildren(elt: BoxAndPointerElement | InternalElement, allowText?: false): InternalElement[];
+    private getChildren(elt: BoxAndPointerElement | InternalElement, allowText = false): (InternalElement | string)[] {
+        return [...elt.childNodes].flatMap((node): (InternalElement | string)[] => {
+            if (node instanceof HTMLElement) {
+                if (internalElementTagNames.has(node.tagName as any)) {
+                    return [node as InternalElement];
                 }
-                else{
-                    result.push(current);
-                    return result;
+                else {
+                    // Invalid element
+                    console.error('Found unexpected element %o in %o. Did you misspell a tag name?', node, elt);
+                    return [];
                 }
-            }, []);
-        };
-
-        const generateValueFromBox = (currentPair: Pair, position: 'head' | 'tail', element: Element): Pair | string | null => {
-            if (element.hasAttribute('ref') && element.getAttribute('ref') !== ""){
-                refsToResolve.push([currentPair, position]);
-                return element.getAttribute('ref');
-            }
-            else if (element.hasAttribute('value') && element.getAttribute('value') !== "") {
-                return element.getAttribute('value');
             }
             else {
-                const realChildNodes: (Pair | string | HTMLElement)[] = getRealChildren([...element.childNodes]);
-                if (realChildNodes.length > 0){
-                    let node = realChildNodes[0];
-                    if (typeof node === "string" || isPair(node)){
-                        return node;
-                    }
-                    else if(node.tagName === "EMPTY"){
-                        return null;
-                    }
-                    else if (node.tagName === "PAIR"){
-                        return generatePairFromElement(node);
-                    }
-                    else if (node.tagName === "LIST"){
-                        return generatePairFromListElement(node);
-                    }
-                    else{
-                        return null;
-                    }
+                // Invalid node
+                switch (node.nodeType) {
+                    case Node.TEXT_NODE:
+                        const text = node.nodeValue?.trim();
+                        if (text) {
+                            if (allowText) {
+                                return [...text.matchAll(/\S+/g)].map(x => x[0]);
+                            }
+                            console.error('Found text %o in %o. Did you mean to use <lisp></lisp>?', node, elt);
+                        }
+                        break;
+                    case Node.COMMENT_NODE:
+                        break;
+                    default:
+                        console.error('Found unexpected node %o in %o.', node, elt);
+                        break;
                 }
-                else{
-                    return null;
-                }
+                return [];
             }
-        }
-
-        const generatePairFromElement = (element: Element): Pair => {
-            let pair: Pair = new PairObject(null, null);
-
-            if (element.hasAttribute('name') && element.getAttribute('name') !== ""){
-                namedPairs[element.getAttribute('name')!] = pair;
-            }
-
-            const realChildNodes = getRealChildren([...element.childNodes]);
-
-            if (realChildNodes.length > 0){
-                let node = realChildNodes[0];
-                if (typeof node === "string" || isPair(node)){
-                    pair.head = node;
-                }
-                else if (node.tagName === "BOX"){
-                    pair.head = generateValueFromBox(pair, 'head', node);
-                }
-                else if (node.tagName === "EMPTY"){
-                    pair.head = null;
-                }
-                else if (node.tagName === "PAIR"){
-                    pair.head = generatePairFromElement(node);
-                }
-                else if (node.tagName === "LIST"){
-                    pair.head = generatePairFromListElement(node);
-                }
-                else{
-                    console.error(`Expected text, box, pair, list, or empty, intead got ${node.tagName.toLowerCase()}`);
-                }
-            }
-            if (realChildNodes.length > 1){
-                let node = realChildNodes[1];
-                if (typeof node === "string" || isPair(node)){
-                    pair.tail = node;
-                }
-                else if (node.tagName === "BOX"){
-                    pair.tail = generateValueFromBox(pair, 'tail', node);
-                }
-                else if (node.tagName === "EMPTY"){
-                    pair.tail = null;
-                }
-                else if (node.tagName === "PAIR"){
-                    pair.tail = generatePairFromElement(node);
-                }
-                else if (node.tagName === "LIST"){
-                    pair.tail = generatePairFromListElement(node);
-                }
-                else{
-                    console.error(`Expected text, box, pair, list, or empty, intead got ${node.tagName.toLowerCase()}`);
-                }
-                for (let node of realChildNodes.slice(2)){
-                    if (node instanceof HTMLElement && (node.tagName === "PAIR" || node.tagName === "LIST")){
-                        generatePairFromElement(node);
-                    }
-                }
-            }
-
-            return pair;
-        };
-
-        const generatePairFromListElement = (element: Element): Pair => {
-            const rootPair = new PairObject(null, null)
-            let pair: Pair = rootPair;
-
-            if (element.hasAttribute('name') && element.getAttribute('name') !== ""){
-                namedPairs[element.getAttribute('name')!] = pair;
-            }
-            const explicitTail = element.hasAttribute('explicit-tail');
-
-            const realChildNodes = getRealChildren([...element.childNodes]);
-            
-            const lastElementIndex = realChildNodes.length - (explicitTail ? 2 : 1);
-            for (const node of realChildNodes.slice(0, lastElementIndex + 1)){
-                if (typeof node === "string" || isPair(node)){
-                    pair.head = node;
-                }
-                else if (node.tagName === "BOX"){
-                    pair.head = generateValueFromBox(pair, 'head', node);
-                }
-                else if (node.tagName === "EMPTY"){
-                    pair.head = null;
-                }
-                else if (node.tagName === "PAIR"){
-                    pair.head = generatePairFromElement(node);
-                }
-                else if (node.tagName === "LIST"){
-                    pair.head = generatePairFromListElement(node);
-                }
-                else{
-                    console.error(`Expected text, box, pair, list, or empty, intead got ${node.tagName.toLowerCase()}`);
-                }
-                if (node !== realChildNodes[lastElementIndex]){
-                    pair.tail = new PairObject(null, null);
-                    pair = pair.tail;
-                }
-            }
-            if (explicitTail){
-                const node = realChildNodes[realChildNodes.length-1];
-                if (node instanceof Text){
-                    pair.tail = node.data.trim();
-                }
-                else if (typeof node === "string" || isPair(node)){
-                    pair.tail = node;
-                }
-                else if (node.tagName === "BOX"){
-                    pair.tail = generateValueFromBox(pair, 'tail', node);
-                }
-                else if (node.tagName === "EMPTY"){
-                    pair.tail = null;
-                }
-                else if (node.tagName === "PAIR"){
-                    pair.tail = generatePairFromElement(node);
-                }
-                else if (node.tagName === "LIST"){
-                    pair.tail = generatePairFromListElement(node);
-                }
-                else{
-                    console.error(`Expected text, box, pair, list, or empty, intead got ${node.tagName.toLowerCase()}`);
-                }
-            }
-            return rootPair;
-        };
-
-        for (const element of getRealChildren([...this.childNodes])){
-            if (typeof element === 'string'){
-                console.error(`Expected pair or list, intead got ${element}`);
-            }
-            else if (isPair(element)){
-                if (!rootPair && !originPairExists){
-                    rootPair = element;
-                }
-            }
-            else if (element.tagName === "PAIR" || element.tagName === "LIST"){
-                let currentPair;
-                if (element.tagName === "PAIR"){
-                    currentPair = generatePairFromElement(element);
-                }
-                else{
-                    currentPair = generatePairFromListElement(element);
-                }
-                if (!rootPair && (!originPairExists || element.hasAttribute('origin'))){
-                    rootPair = currentPair;
-                }
-            }
-            else{
-                console.error(`Expected pair or list, intead got ${element.tagName.toLowerCase()}`);
-            }
-        }
-        for (let binding of refsToResolve){
-            binding[0][binding[1]] = namedPairs[binding[0][binding[1]] as string] || null;
-        }
-
-        if (rootPair === undefined){
-            rootPair = new PairObject(null, null);
-        }
-        return rootPair
+        })
     }
 
-    private renderDiagram(senderBox: HTMLDivElement | null, rows: HTMLDivElement[], rowIndex: number, pair: Pair, paddingBoxes: HTMLDivElement[]) {
-        if (senderBox && this.visited.includes(pair)){
-            this.arrowBindings.push([senderBox, this._visitedElements[this.visited.indexOf(pair)], "unknown"]);
-            return;
-        }
-        this.visited.push(pair);
+    private search(node: BoxObject, callback: (node: BoxObject) => void) {
+        const visited = new Set<BoxObject>();
+        const _search = (node: BoxObject) => {
+            if (visited.has(node)) {
+                return;
+            }
+            visited.add(node);
+            callback(node);
+            switch (node.kind) {
+                case UIObjectType.Single:
+                    if (node.contents.kind === ContentObjectType.Pointer) {
+                        _search(node.contents.target);
+                    }
+                    break;
+                case UIObjectType.Pair:
+                    if (node.lhs.kind === ContentObjectType.Pointer) {
+                        _search(node.lhs.target);
+                    }
+                    if (node.rhs.kind === ContentObjectType.Pointer) {
+                        _search(node.rhs.target);
+                    }
+                    break;
+            }
+        };
+        _search(node);
+    }
 
-        const row = rows[rowIndex];
+    private calculateGraphFromDOM(): BoxObject[] {
+        const namedObjects: { [name: string]: BoxObject } = {};
+        const refResolutionCallbacks: (() => void)[] = [];
+        const graphRoots = [] as BoxObject[];
+        const graphRootNames = new Set<string>();
+        const noRootSymbol = Symbol();
+        /**
+         * Map from a named element to the names of every root whose tree is pointing to it.
+         * If a tree pointing to it has no name, it will use noRootSymbol instead.
+         */
+        const graphRootRefGraph: { [name: string]: Set<string | typeof noRootSymbol> } = {};
+        const rootElements = this.getChildren(this);
+        const forcedRoots = new Set<BoxObject>();
 
-        for (let div of paddingBoxes){
-            let clone: HTMLDivElement = <HTMLDivElement>div.cloneNode(true);
-            clone.style.visibility = "hidden";
-            row.appendChild(clone);
+        let $name: string | typeof noRootSymbol = noRootSymbol;
+
+        const generateBoxObject = (element: InternalElement): BoxObject => {
+            let object: BoxObject;
+            switch (element.tagName) {
+                case Tags.Box:
+                    let [elt, ...extraElts] = this.getChildren(element, true);
+                    for (const extraElt of extraElts) {
+                        if (typeof extraElt === 'string') {
+                            console.error("Found extraneous text node %o in %o could be interpreted as a value.", extraElt, element);
+                        }
+                        else {
+                            console.error("Found extraneous element %o in %o.", extraElt, element);
+                        }
+                    }
+                    if (!elt) {
+                        console.error("<box> element %o contains no values, expected one.", element);
+                        object = makeSingle({ contents: emptySingleton });
+                    }
+                    else {
+                        object = makeSingle({ contents: typeof elt === 'string' ? makeString({ value: elt }) : generateContentObject(elt) });
+                    }
+                    break;
+                case Tags.Pair: {
+                    const [lhsElt, rhsElt, ...extraElts] = this.getChildren(element, true);
+                    for (const extraElt of extraElts) {
+                        if (typeof extraElt === 'string') {
+                            console.error("Found extraneous text node %o in %o could be interpreted as a value.", extraElt, element);
+                        }
+                        else {
+                            console.error("Found extraneous element %o in %o.", extraElt, element);
+                        }
+                    }
+
+                    if (!rhsElt) {
+                        console.error("<pair> element %o only contains one value, expected two.", element);
+                        object = makePair({
+                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            rhs: emptySingleton
+                        });
+                    }
+                    else if (!lhsElt) {
+                        console.error("<pair> element %o contains no values, expected two.", element);
+                        object = makePair({
+                            lhs: emptySingleton,
+                            rhs: emptySingleton
+                        });
+                    }
+                    else {
+                        object = makePair({
+                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            rhs: typeof rhsElt === 'string' ? makeString({ value: rhsElt }) : generateContentObject(rhsElt)
+                        });
+                    }
+                    break;
+                }
+                case Tags.List: {
+                    const elts = this.getChildren(element, true);
+                    if (elts.length === 0) {
+                        object = makeSingle({ contents: emptySingleton });
+                    }
+                    else if (element.hasAttribute(Attributes.ExplicitTail)) {
+                        const tailElt = elts[elts.length - 1];
+                        const tail = typeof tailElt === 'string' ? makeString({ value: tailElt }) : generateContentObject(tailElt);
+
+                        object = elts.slice(0, -1).reduceRight((prev, lhsElt) => makePair({
+                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            rhs: prev === null ? tail : makePointer({ target: prev })
+                        }), null as BoxObject | null)!;
+                    }
+                    else {
+                        object = elts.reduceRight((prev, lhsElt) => makePair({
+                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            rhs: prev === null ? emptySingleton : makePointer({ target: prev })
+                        }), null as BoxObject | null)!;
+                    }
+                    break;
+                }
+                case Tags.Lisp: {
+                    element.childNodes.forEach(node => {
+                        if (![Node.TEXT_NODE, Node.COMMENT_NODE].includes(node.nodeType)) {
+                            console.error("<lisp> elements can only contain text, but found %o in %o.", node, element);
+                        }
+                    });
+
+                    const convertMaybeSExpressionToContentObject = (val: any): ContentObject => {
+                        if (val instanceof SExpression) {
+                            return makePointer({ target: convertSExpressionToBoxObject(val) });
+                        }
+                        if (val == null) {
+                            return emptySingleton;
+                        }
+                        return makeString({ value: val });
+                    };
+
+                    const convertSExpressionToBoxObject = (expr: SExpression): BoxObject => {
+                        return makePair({ lhs: convertMaybeSExpressionToContentObject(expr.head), rhs: convertMaybeSExpressionToContentObject(expr.tail) });
+                    };
+
+                    const parsed = sParse(element.innerText).head;
+                    if (!(parsed instanceof SExpression)) {
+                        console.error("%o is not valid content for a <lisp> element. Did you mean to surround it with parentheses?", element.innerText);
+                        object = makeSingle({ contents: emptySingleton });
+                    }
+                    else {
+                        object = convertSExpressionToBoxObject(parsed);
+                    }
+                    break;
+                }
+                default:
+                    console.error("Found <%s> element, but only <box>, <pair>, <list>, and <lisp> elements are permitted here.", element.tagName.toLowerCase());
+                    object = makeSingle({ contents: generateContentObject(element) });
+                    break;
+            }
+            
+            const name = element.getAttribute(Attributes.Name);
+            if (name) {
+                namedObjects[name] = object;
+            }
+
+            if (element.getAttribute(Attributes.ForceRoot) !== null) {
+                forcedRoots.add(object);
+            }
+
+            return object;
+        };
+
+        const generateContentObject = (element: InternalElement): ContentObject => {
+            switch (element.tagName) {
+                case Tags.Pointer: {
+                    if (element.childNodes.length > 0) {
+                        console.error("<pointer> element %o cannot have any children.", element);
+                    }
+                    const ref = element.getAttribute(Attributes.Ref);
+                    if (!ref) {
+                        console.error("<pointer> element %o must have a ref attribute, but is missing one.", element);
+                        return emptySingleton;
+                    }
+                    
+                    (graphRootRefGraph[ref] ??= new Set()).add($name);
+
+                    if (ref in namedObjects) {
+                        return makePointer({ target: namedObjects[ref] });
+                    }
+
+                    // ref doesn't exist yet
+                    const pointer = makeNullPointer();
+                    refResolutionCallbacks.push(() => {
+                        if (ref in namedObjects) {
+                            transformContentObject(pointer, makePointer({ target: namedObjects[ref] }));
+                        }
+                        else {
+                            console.error("<pointer> element %o has ref=%o, but no element with that name exists.", element, ref);
+                            transformContentObject(pointer, emptySingleton);
+                        }
+                    });
+                    return pointer;
+                }
+                case Tags.Value:
+                    return makeRich({ children: element.childNodes });
+                case Tags.Empty:
+                    return emptySingleton;
+            }
+            return makePointer({ target: generateBoxObject(element) });
+        };
+
+        for (const element of rootElements){
+            const name = element.getAttribute(Attributes.Name);
+            $name = name ?? noRootSymbol;
+            const object = generateBoxObject(element);
+            if (!name || forcedRoots.has(object)) {
+                // If it's unnamed then it can't be referenced so it must be a graph root.
+                graphRoots.push(object);
+            }
+            else {
+                graphRootNames.add(name); 
+            }
         }
 
-        const myIndex = row.children.length;
-
-        const pairBox = document.createElement('div');
-        const headBox = document.createElement('div');
-        this._visitedElements.push(headBox);
-        senderBox ? this.arrowBindings.push([senderBox, headBox, row === senderBox.parentElement!.parentElement ? "Left" : "Top"]) : null;
-        const tailBox = document.createElement('div');
-        pairBox.classList.add('bp--pair');
-        headBox.classList.add('bp--box');
-        tailBox.classList.add('bp--box');
-
-        pairBox.appendChild(headBox);
-        pairBox.appendChild(tailBox);
-        row.appendChild(pairBox);
-
-        if (isPair(pair.tail)){
-            // handle this later
-        }
-        else if (pair.tail == null){
-            this.slashes.push(tailBox);
-        }
-        else{
-            const body = document.createElement('span');
-            body.innerText = pair.tail;
-            tailBox.appendChild(body);
+        for (const root of forcedRoots) {
+            if (!graphRoots.includes(root)) {
+                graphRoots.push(root);
+            }
         }
 
-        if (isPair(pair.head)){
-            // handle this later
-        }
-        else if (pair.head == null){
-            this.slashes.push(headBox);
-        }
-        else{
-            const body = document.createElement('span');
-            body.innerText = pair.head;
-            headBox.appendChild(body);
+        // Resolve previously missing bindings
+        for (const callback of refResolutionCallbacks){
+            callback();
         }
 
-        if (isPair(pair.tail)){
-            this.renderDiagram(tailBox, rows, rowIndex, pair.tail, []);
+        while (true) {
+            // Find which graph roots aren't covered by our existing vertex set
+            const missing = new Set([...graphRootNames].map(x => namedObjects[x]));
+            for (const root of graphRoots) {
+                this.search(root, node => missing.delete(node));
+            }
+
+            if (missing.size === 0) {
+                break;
+            }
+
+            const availableFrom = new Map<BoxObject, number>();
+            for (const root of missing) {
+                availableFrom.set(root, 0);
+            }
+            for (const root of missing) {
+                this.search(root, node => {
+                    if (availableFrom.has(node)) {
+                        availableFrom.set(node, availableFrom.get(node)! + 1);
+                    }
+                });
+            }
+            
+            const pathsToHistogram = [] as BoxObject[][];
+            for (const [root, sources] of availableFrom.entries()) {
+                (pathsToHistogram[sources] ??= []).push(root);
+            }
+            for (let i = 0; i < pathsToHistogram.length; i++) {
+                const roots = pathsToHistogram[i];
+                if (roots && roots.length > 0) {
+                    if (i === 0) {
+                        // All roots with 0 paths to them are true roots.
+                        for (const root of roots) {
+                            graphRoots.push(root);
+                        }
+                    }
+                    else {
+                        // We have a cycle, so just pick an arbitrary root to use.
+                        graphRoots.push(roots[0]);
+                    }
+                    break;
+                }
+            };
         }
-        if (isPair(pair.head)){
-            const newIndex = rows.push(document.createElement('div')) - 1;
-            rows[newIndex].classList.add('bp--row');
-            this.renderDiagram(headBox, rows, newIndex, pair.head, (<HTMLDivElement[]>[...row.children]).slice(0, myIndex));
+
+        return graphRoots;
+    }
+
+    private rows = [] as HTMLDivElement[];
+    private objectToPreparedEltBindings = new Map<BoxObject, HTMLDivElement>();
+    private objectToEltBindings = new Map<BoxObject, HTMLDivElement>();
+
+    private pushRow(referencePadding: Element[]): HTMLDivElement {
+        const rowElt = document.createElement('div');
+        rowElt.classList.add("bp--row");
+        for (const elt of referencePadding) {
+            const clone = elt.cloneNode(true) as Element;
+            clone.classList.add("bp--hidden");
+            rowElt.appendChild(clone);
         }
+        this.rows.push(rowElt);
+        return rowElt;
+    }
+
+    private prepareRenderRoot(object: BoxObject) {
+        this.objectToPreparedEltBindings.set(object, document.createElement('div'));
+    }
+
+    private renderFromBoxObject(object: BoxObject, row: HTMLDivElement, root = false): HTMLDivElement {
+        let preparedElt = this.objectToPreparedEltBindings.get(object);
+        if (!root && preparedElt) {
+            return preparedElt;
+        }
+
+        const position = row.childElementCount;
+
+        const container = document.createElement('div');
+        container.classList.add('bp--box-container');
+        row.appendChild(container);
+
+        this.objectToEltBindings.set(object, container);
+
+        let headBox: ContentObject | undefined;
+        let tailBox: ContentObject;
+        switch (object.kind) {
+            case UIObjectType.Single:
+                tailBox = object.contents;
+                break;
+            case UIObjectType.Pair:
+                headBox = object.lhs;
+                tailBox = object.rhs;
+                break;
+        }
+
+        let headBoxElt: HTMLDivElement | undefined;
+        let headBoxTargetUnknown = false;
+
+        if (headBox) {
+            headBoxElt = preparedElt ?? document.createElement('div');
+            headBoxElt.classList.add('bp--box');
+            container.prepend(headBoxElt);
+            
+            switch (headBox.kind) {
+                case ContentObjectType.Empty:
+                    this.slashes.push(headBoxElt);
+                    break;
+                case ContentObjectType.String:
+                    const valueContainer = document.createElement('span');
+                    valueContainer.classList.add("bp--value-container")
+                    valueContainer.innerText = headBox.value;
+                    headBoxElt.appendChild(valueContainer);
+                    break;
+                case ContentObjectType.Rich:
+                    for (const elt of headBox.children) {
+                        headBoxElt.appendChild(elt);
+                    }
+                    break;
+                case ContentObjectType.Pointer:
+                    const target = this.objectToEltBindings.get(headBox.target);
+                    if (target) {
+                        this.arrowBindings.push({ from: headBoxElt, to: target, side: "unknown" })
+                    }
+                    else {
+                        headBoxTargetUnknown = true;
+                    }
+                    break;
+            }
+        }
+
+        // tailBox
+        let tailBoxElt = headBox ? document.createElement('div') : preparedElt ?? document.createElement('div');
+        tailBoxElt.classList.add('bp--box');
+        container.appendChild(tailBoxElt);
+        
+        switch (tailBox.kind) {
+            case ContentObjectType.Empty:
+                this.slashes.push(tailBoxElt);
+                break;
+            case ContentObjectType.String:
+                const valueContainer = document.createElement('span');
+                valueContainer.classList.add("bp--value-container")
+                valueContainer.innerText = tailBox.value;
+                tailBoxElt.appendChild(valueContainer);
+                break;
+            case ContentObjectType.Rich:
+                for (const elt of tailBox.children) {
+                    tailBoxElt.appendChild(elt);
+                }
+                break;
+            case ContentObjectType.Pointer:
+                const target = this.objectToEltBindings.get(tailBox.target);
+                if (target) {
+                    this.arrowBindings.push({ from: tailBoxElt, to: target, side: "unknown" });
+                }
+                else {
+                    const to = this.renderFromBoxObject(tailBox.target, row);
+                    this.arrowBindings.push({ from: tailBoxElt, to, side: to.classList.contains("bp--box") ? "Left" : "unknown" });
+                }
+                break;
+        }
+
+        // Delaying this was necessary to make sure the recursive calls run in the correct order.
+        if (headBoxTargetUnknown) {
+            const to = this.renderFromBoxObject((headBox as PointerObject).target, this.pushRow([...row.children].slice(0, position)));
+            this.arrowBindings.push({ from: headBoxElt!, to, side: to.classList.contains("bp--box") ? "Top" : "unknown" });
+        }
+
+        return headBoxElt ?? tailBoxElt;
     }
 }
 
