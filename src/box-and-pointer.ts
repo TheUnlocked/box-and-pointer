@@ -32,8 +32,11 @@ class BoxAndPointerElement extends HTMLParsedElement {
             this.renderFromBoxObject(object, this.pushRow([], []), true);
         }
 
-        for (let row of this.rows){
-            this.shadow.appendChild(row);
+        for (const row of this.rows){
+            // Don't add empty rows
+            if (row.querySelector(".bp--box-container:not(.bp--hidden)")) {
+                this.shadow.appendChild(row);
+            }
         }
         
         const plumb = jsPlumb.getInstance({
