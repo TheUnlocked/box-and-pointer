@@ -1,4 +1,4 @@
-import { BoxObject, makePair, makeSingle, UIObjectType } from "./types/BoxObject";
+import { TupleObject, makeTuple } from "./types/TupleObject";
 import HTMLParsedElement from "html-parsed-element";
 import { Attributes, InternalElement, internalElementTagNames, Tags } from "./types/ElementInfo";
 import { ContentObject, ContentObjectType, emptySingleton, makeNullPointer, makePointer, makeRich, makeString, PointerObject, transformContentObject } from "./types/ContentObject";
@@ -29,7 +29,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
         }
 
         for (const object of graph) {
-            this.renderFromBoxObject(object, this.pushRow([]), true);
+            this.renderFromBoxObject(object, this.pushRow([], []), true);
         }
 
         for (let row of this.rows){
@@ -146,37 +146,27 @@ class BoxAndPointerElement extends HTMLParsedElement {
         })
     }
 
-    private search(node: BoxObject, callback: (node: BoxObject) => void) {
-        const visited = new Set<BoxObject>();
-        const _search = (node: BoxObject) => {
+    private search(node: TupleObject, callback: (node: TupleObject) => void) {
+        const visited = new Set<TupleObject>();
+        const _search = (node: TupleObject) => {
             if (visited.has(node)) {
                 return;
             }
             visited.add(node);
             callback(node);
-            switch (node.kind) {
-                case UIObjectType.Single:
-                    if (node.contents.kind === ContentObjectType.Pointer) {
-                        _search(node.contents.target);
-                    }
-                    break;
-                case UIObjectType.Pair:
-                    if (node.lhs.kind === ContentObjectType.Pointer) {
-                        _search(node.lhs.target);
-                    }
-                    if (node.rhs.kind === ContentObjectType.Pointer) {
-                        _search(node.rhs.target);
-                    }
-                    break;
+            for (const obj of node.contents) {
+                if (obj.kind === ContentObjectType.Pointer) {
+                    _search(obj.target);
+                }
             }
         };
         _search(node);
     }
 
-    private calculateGraphFromDOM(): BoxObject[] {
-        const namedObjects: { [name: string]: BoxObject } = {};
+    private calculateGraphFromDOM(): TupleObject[] {
+        const namedObjects: { [name: string]: TupleObject } = {};
         const refResolutionCallbacks: (() => void)[] = [];
-        const graphRoots = [] as BoxObject[];
+        const graphRoots = [] as TupleObject[];
         const graphRootNames = new Set<string>();
         const noRootSymbol = Symbol();
         /**
@@ -185,83 +175,96 @@ class BoxAndPointerElement extends HTMLParsedElement {
          */
         const graphRootRefGraph: { [name: string]: Set<string | typeof noRootSymbol> } = {};
         const rootElements = this.getChildren(this);
-        const forcedRoots = new Set<BoxObject>();
+        const forcedRoots = new Set<TupleObject>();
 
         let $name: string | typeof noRootSymbol = noRootSymbol;
 
-        const generateBoxObject = (element: InternalElement): BoxObject => {
-            let object: BoxObject;
+        const generateBoxObject = (element: InternalElement): TupleObject => {
+            let object: TupleObject;
             switch (element.tagName) {
                 case Tags.Box:
-                    let [elt, ...extraElts] = this.getChildren(element, true);
+                    const [elt, ...extraElts] = this.getChildren(element, true);
                     for (const extraElt of extraElts) {
                         if (typeof extraElt === 'string') {
-                            console.error("Found extraneous text node %o in %o could be interpreted as a value.", extraElt, element);
+                            console.error("Found extraneous text node %o in %o could be interpreted as a value. Did you mean to use <tuple>?", extraElt, element);
                         }
                         else {
-                            console.error("Found extraneous element %o in %o.", extraElt, element);
+                            console.error("Found extraneous element %o in %o. Did you mean to use <tuple>?", extraElt, element);
                         }
                     }
                     if (!elt) {
                         console.error("<box> element %o contains no values, expected one.", element);
-                        object = makeSingle({ contents: emptySingleton });
+                        object = makeTuple(emptySingleton);
                     }
                     else {
-                        object = makeSingle({ contents: typeof elt === 'string' ? makeString({ value: elt }) : generateContentObject(elt) });
+                        object = makeTuple(typeof elt === 'string' ? makeString({ value: elt }) : generateContentObject(elt));
                     }
                     break;
                 case Tags.Pair: {
                     const [lhsElt, rhsElt, ...extraElts] = this.getChildren(element, true);
                     for (const extraElt of extraElts) {
                         if (typeof extraElt === 'string') {
-                            console.error("Found extraneous text node %o in %o could be interpreted as a value.", extraElt, element);
+                            console.error("Found extraneous text node %o in %o could be interpreted as a value. Did you mean to use <tuple>?", extraElt, element);
                         }
                         else {
-                            console.error("Found extraneous element %o in %o.", extraElt, element);
+                            console.error("Found extraneous element %o in %o. Did you mean to use <tuple>?", extraElt, element);
                         }
                     }
 
                     if (!rhsElt) {
                         console.error("<pair> element %o only contains one value, expected two.", element);
-                        object = makePair({
-                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
-                            rhs: emptySingleton
-                        });
+                        object = makeTuple(
+                            typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            emptySingleton
+                        );
                     }
                     else if (!lhsElt) {
                         console.error("<pair> element %o contains no values, expected two.", element);
-                        object = makePair({
-                            lhs: emptySingleton,
-                            rhs: emptySingleton
-                        });
+                        object = makeTuple(
+                            emptySingleton,
+                            emptySingleton
+                        );
                     }
                     else {
-                        object = makePair({
-                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
-                            rhs: typeof rhsElt === 'string' ? makeString({ value: rhsElt }) : generateContentObject(rhsElt)
-                        });
+                        object = makeTuple(
+                            typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            typeof rhsElt === 'string' ? makeString({ value: rhsElt }) : generateContentObject(rhsElt)
+                        );
+                    }
+                    break;
+                }
+                case Tags.Tuple: {
+                    const elts = this.getChildren(element, true);
+                    if (elts.length === 0) {
+                        console.error("<tuple> element %o contains no values, expected at least one.", element);
+                        object = makeTuple(
+                            emptySingleton
+                        );
+                    }
+                    else {
+                        object = makeTuple(...elts.map(x => typeof x === 'string' ? makeString({ value: x }) : generateContentObject(x)));
                     }
                     break;
                 }
                 case Tags.List: {
                     const elts = this.getChildren(element, true);
                     if (elts.length === 0) {
-                        object = makeSingle({ contents: emptySingleton });
+                        object = makeTuple(emptySingleton);
                     }
                     else if (element.hasAttribute(Attributes.ExplicitTail)) {
                         const tailElt = elts[elts.length - 1];
                         const tail = typeof tailElt === 'string' ? makeString({ value: tailElt }) : generateContentObject(tailElt);
 
-                        object = elts.slice(0, -1).reduceRight((prev, lhsElt) => makePair({
-                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
-                            rhs: prev === null ? tail : makePointer({ target: prev })
-                        }), null as BoxObject | null)!;
+                        object = elts.slice(0, -1).reduceRight((prev, lhsElt) => makeTuple(
+                            typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            prev === null ? tail : makePointer({ target: prev })
+                        ), null as TupleObject | null)!;
                     }
                     else {
-                        object = elts.reduceRight((prev, lhsElt) => makePair({
-                            lhs: typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
-                            rhs: prev === null ? emptySingleton : makePointer({ target: prev })
-                        }), null as BoxObject | null)!;
+                        object = elts.reduceRight((prev, lhsElt) => makeTuple(
+                            typeof lhsElt === 'string' ? makeString({ value: lhsElt }) : generateContentObject(lhsElt),
+                            prev === null ? emptySingleton : makePointer({ target: prev })
+                        ), null as TupleObject | null)!;
                     }
                     break;
                 }
@@ -282,14 +285,14 @@ class BoxAndPointerElement extends HTMLParsedElement {
                         return makeString({ value: val });
                     };
 
-                    const convertSExpressionToBoxObject = (expr: SExpression): BoxObject => {
-                        return makePair({ lhs: convertMaybeSExpressionToContentObject(expr.head), rhs: convertMaybeSExpressionToContentObject(expr.tail) });
+                    const convertSExpressionToBoxObject = (expr: SExpression): TupleObject => {
+                        return makeTuple(convertMaybeSExpressionToContentObject(expr.head), convertMaybeSExpressionToContentObject(expr.tail));
                     };
 
                     const parsed = sParse(element.innerText).head;
                     if (!(parsed instanceof SExpression)) {
                         console.error("%o is not valid content for a <lisp> element. Did you mean to surround it with parentheses?", element.innerText);
-                        object = makeSingle({ contents: emptySingleton });
+                        object = makeTuple(emptySingleton);
                     }
                     else {
                         object = convertSExpressionToBoxObject(parsed);
@@ -298,7 +301,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 }
                 default:
                     console.error("Found <%s> element, but only <box>, <pair>, <list>, and <lisp> elements are permitted here.", element.tagName.toLowerCase());
-                    object = makeSingle({ contents: generateContentObject(element) });
+                    object = makeTuple(generateContentObject(element));
                     break;
             }
             
@@ -346,7 +349,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                     return pointer;
                 }
                 case Tags.Value:
-                    return makeRich({ children: element.childNodes });
+                    return makeRich({ content: element });
                 case Tags.Empty:
                     return emptySingleton;
             }
@@ -388,7 +391,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 break;
             }
 
-            const availableFrom = new Map<BoxObject, number>();
+            const availableFrom = new Map<TupleObject, number>();
             for (const root of missing) {
                 availableFrom.set(root, 0);
             }
@@ -400,7 +403,7 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 });
             }
             
-            const pathsToHistogram = [] as BoxObject[][];
+            const pathsToHistogram = [] as TupleObject[][];
             for (const [root, sources] of availableFrom.entries()) {
                 (pathsToHistogram[sources] ??= []).push(root);
             }
@@ -426,10 +429,10 @@ class BoxAndPointerElement extends HTMLParsedElement {
     }
 
     private rows = [] as HTMLDivElement[];
-    private objectToPreparedEltBindings = new Map<BoxObject, HTMLDivElement>();
-    private objectToEltBindings = new Map<BoxObject, HTMLDivElement>();
+    private objectToPreparedEltBindings = new Map<TupleObject, HTMLDivElement>();
+    private objectToEltBindings = new Map<TupleObject, HTMLDivElement>();
 
-    private pushRow(referencePadding: Element[]): HTMLDivElement {
+    private pushRow(referencePadding: Element[], tuplePadding: Element[]): HTMLDivElement {
         const rowElt = document.createElement('div');
         rowElt.classList.add("bp--row");
         for (const elt of referencePadding) {
@@ -437,15 +440,23 @@ class BoxAndPointerElement extends HTMLParsedElement {
             clone.classList.add("bp--hidden");
             rowElt.appendChild(clone);
         }
+        if (tuplePadding.length > 0) {
+            const tuplePaddingContainer = document.createElement('div');
+            tuplePaddingContainer.classList.add("bp--box-container", "bp--hidden", "bp--tuple--padding");
+            for (const tupleSegment of tuplePadding) {
+                tuplePaddingContainer.appendChild(tupleSegment.cloneNode(true));
+            }
+            rowElt.appendChild(tuplePaddingContainer);
+        }
         this.rows.push(rowElt);
         return rowElt;
     }
 
-    private prepareRenderRoot(object: BoxObject) {
+    private prepareRenderRoot(object: TupleObject) {
         this.objectToPreparedEltBindings.set(object, document.createElement('div'));
     }
 
-    private renderFromBoxObject(object: BoxObject, row: HTMLDivElement, root = false): HTMLDivElement {
+    private renderFromBoxObject(object: TupleObject, row: HTMLDivElement, root = false): HTMLDivElement {
         let preparedElt = this.objectToPreparedEltBindings.get(object);
         if (!root && preparedElt) {
             return preparedElt;
@@ -459,55 +470,47 @@ class BoxAndPointerElement extends HTMLParsedElement {
 
         this.objectToEltBindings.set(object, container);
 
-        let headBox: ContentObject | undefined;
-        let tailBox: ContentObject;
-        switch (object.kind) {
-            case UIObjectType.Single:
-                tailBox = object.contents;
-                break;
-            case UIObjectType.Pair:
-                headBox = object.lhs;
-                tailBox = object.rhs;
-                break;
-        }
+        const nonTailBoxes = object.contents.slice(0, -1);
+        const tailBox = object.contents[object.contents.length - 1];
 
-        let headBoxElt: HTMLDivElement | undefined;
-        let headBoxTargetUnknown = false;
-
-        if (headBox) {
-            headBoxElt = preparedElt ?? document.createElement('div');
-            headBoxElt.classList.add('bp--box');
-            container.prepend(headBoxElt);
+        const boxTargets = [] as [box: PointerObject, elt: HTMLDivElement, index: number][];
+        const nonTailBoxElts = [] as HTMLDivElement[];
+        
+        for (let i = 0; i < nonTailBoxes.length; i++) {
+            const box = nonTailBoxes[i];
+            const boxElt = (box === nonTailBoxes[0] && preparedElt) || document.createElement('div');
+            nonTailBoxElts.push(boxElt);
+            boxElt.classList.add('bp--box');
+            container.appendChild(boxElt);
             
-            switch (headBox.kind) {
+            switch (box.kind) {
                 case ContentObjectType.Empty:
-                    this.slashes.push(headBoxElt);
+                    this.slashes.push(boxElt);
                     break;
                 case ContentObjectType.String:
                     const valueContainer = document.createElement('span');
                     valueContainer.classList.add("bp--value-container")
-                    valueContainer.innerText = headBox.value;
-                    headBoxElt.appendChild(valueContainer);
+                    valueContainer.innerText = box.value;
+                    boxElt.appendChild(valueContainer);
                     break;
                 case ContentObjectType.Rich:
-                    for (const elt of headBox.children) {
-                        headBoxElt.appendChild(elt);
-                    }
+                    const valueElt = box.content.cloneNode(true) as HTMLElement;
+                    valueElt.classList.add("bp--value-container");
+                    boxElt.appendChild(valueElt);
                     break;
                 case ContentObjectType.Pointer:
-                    const target = this.objectToEltBindings.get(headBox.target);
+                    const target = this.objectToEltBindings.get(box.target);
                     if (target) {
-                        this.arrowBindings.push({ from: headBoxElt, to: target, side: "unknown" })
+                        this.arrowBindings.push({ from: boxElt, to: target, side: "unknown" });
                     }
                     else {
-                        headBoxTargetUnknown = true;
+                        boxTargets.unshift([box, boxElt, i]);
                     }
                     break;
             }
         }
 
-        // tailBox
-        let tailBoxElt = headBox ? document.createElement('div') : preparedElt ?? document.createElement('div');
+        const tailBoxElt = nonTailBoxes.length > 0 ? document.createElement('div') : preparedElt ?? document.createElement('div');
         tailBoxElt.classList.add('bp--box');
         container.appendChild(tailBoxElt);
         
@@ -522,9 +525,9 @@ class BoxAndPointerElement extends HTMLParsedElement {
                 tailBoxElt.appendChild(valueContainer);
                 break;
             case ContentObjectType.Rich:
-                for (const elt of tailBox.children) {
-                    tailBoxElt.appendChild(elt);
-                }
+                const valueElt = tailBox.content.cloneNode(true) as HTMLElement;
+                valueElt.classList.add("bp--value-container");
+                tailBoxElt.appendChild(valueElt);
                 break;
             case ContentObjectType.Pointer:
                 const target = this.objectToEltBindings.get(tailBox.target);
@@ -539,12 +542,12 @@ class BoxAndPointerElement extends HTMLParsedElement {
         }
 
         // Delaying this was necessary to make sure the recursive calls run in the correct order.
-        if (headBoxTargetUnknown) {
-            const to = this.renderFromBoxObject((headBox as PointerObject).target, this.pushRow([...row.children].slice(0, position)));
-            this.arrowBindings.push({ from: headBoxElt!, to, side: to.classList.contains("bp--box") ? "Top" : "unknown" });
+        for (const [box, boxElt, i] of boxTargets) {
+            const to = this.renderFromBoxObject((box as PointerObject).target, this.pushRow([...row.children].slice(0, position), nonTailBoxElts.slice(0, i)));
+            this.arrowBindings.push({ from: boxElt!, to, side: to.classList.contains("bp--box") ? "Top" : "unknown" });
         }
 
-        return headBoxElt ?? tailBoxElt;
+        return nonTailBoxElts[0] ?? tailBoxElt;
     }
 }
 

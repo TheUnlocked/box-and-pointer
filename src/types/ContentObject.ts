@@ -1,4 +1,4 @@
-import { BoxObject } from "./BoxObject";
+import { TupleObject } from "./TupleObject";
 
 export enum ContentObjectType {
     Pointer,
@@ -9,7 +9,7 @@ export enum ContentObjectType {
 
 export interface PointerObject {
     kind: ContentObjectType.Pointer;
-    target: BoxObject;
+    target: TupleObject;
 }
 
 export function makePointer(x: Omit<PointerObject, 'kind'>): PointerObject {
@@ -51,7 +51,7 @@ export function isString(x: ContentObject): x is StringObject {
 
 export interface RichObject {
     kind: ContentObjectType.Rich;
-    children: NodeListOf<ChildNode>;
+    content: HTMLElement;
 }
 
 export function makeRich(x: Omit<RichObject, 'kind'>): RichObject {

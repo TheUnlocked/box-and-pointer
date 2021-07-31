@@ -2,6 +2,7 @@ export enum Tags {
     // Box Elements
     Box = 'BOX',
     Pair = 'PAIR',
+    Tuple = 'TUPLE',
     List = 'LIST',
     Lisp = 'LISP',
 
@@ -28,6 +29,10 @@ export declare class PairElement extends HTMLElement {
     tagName: Tags.Pair;
 }
 
+export declare class TupleElement extends HTMLElement {
+    tagName: Tags.Tuple;
+}
+
 export declare class ListElement extends HTMLElement {
     tagName: Tags.List;
 }
@@ -51,6 +56,7 @@ export declare class LispElement extends HTMLElement {
 export type InternalElement
     = BoxElement
     | PairElement
+    | TupleElement
     | ListElement
     | ValueElement
     | PointerElement

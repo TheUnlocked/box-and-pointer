@@ -24,6 +24,11 @@
     visibility: hidden;
 }
 
+.bp--box-container.bp--tuple--padding {
+    margin-left: 0;
+    margin-right: 0;
+}
+
 .bp--value-container {
     padding: 0 0.45em;
     line-height: 2em;
