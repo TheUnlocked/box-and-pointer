@@ -546,7 +546,11 @@ class BoxAndPointerElement extends HTMLParsedElement {
 
         // Delaying this was necessary to make sure the recursive calls run in the correct order.
         for (const [box, boxElt, i] of boxTargets) {
-            const to = this.renderFromBoxObject((box as PointerObject).target, this.pushRow([...row.children].slice(0, position), nonTailBoxElts.slice(0, i)));
+            const target = this.objectToEltBindings.get(box.target);
+            const to = target ?? this.renderFromBoxObject(
+                (box as PointerObject).target,
+                this.pushRow([...row.children].slice(0, position), nonTailBoxElts.slice(0, i))
+            );
             this.arrowBindings.push({ from: boxElt!, to, side: to.classList.contains("bp--box") ? "Top" : "unknown" });
         }
 

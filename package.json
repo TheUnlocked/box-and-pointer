@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "watch": "npx concurrently 'tsc --watch' 'webpack --watch'",
-    "start": "npx concurrently 'tsc --watch' 'webpack --watch' 'npx serve'",
+    "watch": "npx concurrently \"tsc --watch\" \"webpack --watch\"",
+    "start": "npx concurrently \"tsc --watch\" \"webpack --watch\" \"npx serve\"",
     "build": "tsc && webpack --mode=production"
   },
   "dependencies": {
